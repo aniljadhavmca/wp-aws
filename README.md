@@ -13,9 +13,9 @@
                          └──────┬───────┘
                                 │
                          ┌──────▼───────┐
-                         │     ALB      │  ← Free ACM SSL Certificate
-                         │  (public)    │  ← Health Checks (/health)
-                         │  Port 80/443 │  ← Sticky Sessions
+                         │     ALB      │  ← Health Checks (/health)
+                         │  (public)    │  ← Sticky Sessions
+                         │  Port 80/443 │
                          └──────┬───────┘
                                 │
               ┌─────────────────▼─────────────────────┐
@@ -31,19 +31,12 @@
               │  │  │          │    │          │    │  │
               │  │  │ Nginx    │    │ Nginx    │    │  │
               │  │  │ PHP 8.2  │    │ PHP 8.2  │    │  │
+              │  │  │ MySQL    │    │ MySQL    │    │  │
               │  │  │ Redis    │    │ Redis    │    │  │
-              │  │  │ WP-CLI   │    │ WP-CLI   │    │  │
               │  │  └──────────┘    └──────────┘    │  │
               │  │                                  │  │
               │  │  Scale UP:   Memory ≥ 70% (15m)  │  │
               │  │  Scale DOWN: < 70% stable (6hr)  │  │
-              │  └──────────────────────────────────┘  │
-              │                                        │
-              │  ┌──────────────────────────────────┐  │
-              │  │     RDS MySQL 8.0 (encrypted)    │  │
-              │  │     db.t3.medium │ 2 vCPU 4GB    │  │
-              │  │     100GB GP3 │ Auto → 200GB     │  │
-              │  │     7-day automated backups       │  │
               │  └──────────────────────────────────┘  │
               └────────────────────────────────────────┘
 
@@ -51,21 +44,33 @@
               (No SSH │ No Bastion │ No Public IP)
 ```
 
+> **Production upgrade**: Uncomment `rds.tf` to use managed RDS MySQL instead of local MySQL. Gives you automated backups, Multi-AZ failover, and shared DB across scaled instances.
+
 ---
 
 ## 💰 Cost Breakdown
 
-### Base Cost (1 instance running 24/7)
+### POC Mode (current - MySQL on EC2)
 
 | Service | Monthly Cost |
 |---------|-------------|
 | EC2 t3.large (2 vCPU, 8GB) | $60 |
-| RDS db.t3.medium (100GB GP3) | $50 |
 | ALB | $22 |
 | CloudFront + S3 | $12 |
 | NAT Gateway | $5 |
 | EBS GP3 100GB | $8 |
-| CloudWatch | $3 |
+| **Total** | **~$107/month** |
+
+### Production Mode (with RDS)
+
+| Service | Monthly Cost |
+|---------|-------------|
+| EC2 t3.large | $60 |
+| RDS db.t3.medium | $50 |
+| ALB | $22 |
+| CloudFront + S3 | $12 |
+| NAT Gateway | $5 |
+| EBS GP3 100GB | $8 |
 | **Total** | **~$160/month** |
 
 ### Auto Scaling Cost (pay only for hours used!)
@@ -78,16 +83,6 @@ EC2 is billed **per hour**. If traffic spikes and a 2nd instance runs for 3 hour
 | 2nd EC2 runs 1 day | +$2.00 |
 | 2nd EC2 runs full week | +$14.00 |
 | 2nd EC2 runs full month | +$60.00 |
-
-**Example**: Traffic spike on sale day → 2nd instance UP for 6 hours → scales back down. Cost = **$0.50 extra** that day.
-
-### Save with Reserved Instances
-
-| Option | Savings |
-|--------|---------|
-| EC2 RI (1-year) | $60 → $38/mo |
-| RDS RI (1-year) | $50 → $32/mo |
-| **Both** | **~$120/month total** |
 
 ---
 
@@ -107,45 +102,57 @@ Repository → Settings → Secrets and variables → Actions:
 
 ## 🚀 Deploy
 
-### Option 1: GitHub Actions (recommended)
-
 1. Add the 5 secrets above
-2. Push any change to `infra/` folder → auto deploys
-3. Check **Actions** tab for progress
-
-### Option 2: Local (first time)
-
-```bash
-brew install opentofu
-cd infra/
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars
-
-tofu init
-tofu plan
-tofu apply    # ~10-12 minutes
-```
-
-### After Deploy
-
-```bash
-tofu output
-# wordpress_url       = "http://wp-prod-alb-xxxxx.us-east-1.elb.amazonaws.com"
-# wordpress_admin_url = "http://wp-prod-alb-xxxxx.../wp-admin/"
-```
+2. Go to **Actions** → **Infrastructure - OpenTofu** → **Run workflow**
+3. Wait ~10-12 minutes
+4. Check output for your WordPress URL
 
 ---
 
 ## 🌐 Access WordPress
 
-| What | URL |
+After deployment:
+
+| What | How |
 |------|-----|
-| **Your site** | `http://<ALB_DNS>` |
-| **Admin panel** | `http://<ALB_DNS>/wp-admin/` |
-| **Username** | `admin` (default) |
-| **Password** | Value of `WP_ADMIN_PASSWORD` secret |
+| **Site URL** | `http://<ALB_DNS>` (from workflow output) |
+| **Admin Panel** | `http://<ALB_DNS>/wp-admin/` |
+| **WP Username** | `admin` |
+| **WP Password** | Your `WP_ADMIN_PASSWORD` secret |
 
 Pre-installed: WordPress + WooCommerce + Redis Cache + S3 Media Offload + SEO permalinks.
+
+---
+
+## 🗄️ MySQL Access
+
+MySQL runs locally on EC2. Connect via SSM first, then:
+
+| Detail | Value |
+|--------|-------|
+| **Host** | `localhost` |
+| **Database** | `wordpress` |
+| **Username** | `wpadmin` |
+| **Password** | Your `DB_PASSWORD` secret |
+| **Port** | `3306` |
+
+### MySQL Commands (after SSM connect)
+```bash
+# Login to MySQL
+mysql -u wpadmin -p wordpress
+# Enter your DB_PASSWORD when prompted
+
+# Check database size
+mysql -u wpadmin -p -e "SELECT table_schema AS 'Database', 
+  ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'Size (MB)' 
+  FROM information_schema.tables GROUP BY table_schema;"
+
+# Check WordPress tables
+mysql -u wpadmin -p -e "USE wordpress; SHOW TABLES;"
+
+# Manual backup
+cd /var/www/wordpress && sudo -u www-data wp db export /tmp/backup.sql
+```
 
 ---
 
@@ -178,7 +185,6 @@ Or: **AWS Console → EC2 → Select Instance → Connect → Session Manager**
 
 - Min: 1 │ Max: 3
 - New instances auto-join ALB after ~10 min (userdata completes)
-- Scaled instances share the **same RDS database** (no data loss)
 - You only pay for scaled instances **during the hours they run**
 
 ---
@@ -221,12 +227,14 @@ sudo -u www-data wp plugin list       # Plugins
 redis-cli ping                        # Redis (expect PONG)
 sudo nginx -t                         # Nginx config
 sudo systemctl status php8.2-fpm     # PHP status
+sudo systemctl status mysql           # MySQL status
 ```
 
 ### View logs
 ```bash
 tail -f /var/log/nginx/error.log
 tail -f /var/log/php/wordpress-error.log
+tail -f /var/log/mysql/error.log
 ```
 
 ### Clear everything
@@ -245,7 +253,6 @@ sudo systemctl restart php8.2-fpm nginx
 | EC2 in private subnet (no public IP) | ✅ |
 | No SSH, no bastion | ✅ |
 | ALB shields EC2 | ✅ |
-| RDS in private subnet | ✅ |
 | IMDSv2 enforced | ✅ |
 | S3 private (OAC only) | ✅ |
 | All storage encrypted | ✅ |
@@ -266,15 +273,15 @@ sudo systemctl restart php8.2-fpm nginx
 
 ---
 
-## 📦 Migrate from SiteGround
+## 🔄 Switch to RDS (Production)
 
-```bash
-brew install --cask session-manager-plugin
-chmod +x scripts/migrate.sh
-./scripts/migrate.sh
-```
+When moving to your real AWS account:
 
-Interactive script that: exports DB → imports to RDS → syncs media to S3 → updates URLs → clears cache.
+1. Uncomment everything in `infra/rds.tf`
+2. In `infra/autoscaling.tf`, change `db_host` from `"localhost"` to `aws_db_instance.wordpress.address`
+3. Remove MySQL install section from `infra/userdata.sh`
+4. Uncomment RDS alarms in `infra/monitoring.tf`
+5. Run `tofu apply`
 
 ---
 
@@ -290,11 +297,11 @@ Interactive script that: exports DB → imports to RDS → syncs media to S3 →
 │   ├── ec2.tf             # Security Group, IAM, AMI
 │   ├── alb.tf             # ALB, Target Group, Listeners
 │   ├── autoscaling.tf     # Launch Template, ASG, Scaling
-│   ├── rds.tf             # MySQL 8.0, Parameters
+│   ├── rds.tf             # MySQL 8.0 (commented - POC mode)
 │   ├── s3-cloudfront.tf   # S3 + CloudFront CDN
 │   ├── monitoring.tf      # CloudWatch Alarms, SNS
 │   ├── state.tf           # Remote state (S3 + DynamoDB)
-│   ├── userdata.sh        # Server bootstrap
+│   ├── userdata.sh        # Server bootstrap (installs everything)
 │   └── variables.tf       # Inputs
 ├── scripts/
 │   ├── migrate.sh         # SiteGround → AWS

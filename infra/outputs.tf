@@ -16,7 +16,8 @@ output "wordpress_admin_user" {
 }
 
 output "rds_endpoint" {
-  value = aws_db_instance.wordpress.endpoint
+  value       = "localhost (MySQL on EC2 - POC mode)"
+  description = "Switch to RDS for production"
 }
 
 output "s3_media_bucket" {

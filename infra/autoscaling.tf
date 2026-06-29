@@ -31,7 +31,7 @@ resource "aws_launch_template" "wordpress" {
   }
 
   user_data = base64encode(templatefile("${path.module}/userdata.sh", {
-    db_host        = aws_db_instance.wordpress.address
+    db_host        = "localhost"
     db_name        = var.db_name
     db_user        = var.db_username
     db_pass        = var.db_password

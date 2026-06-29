@@ -7,7 +7,18 @@ echo "Timestamp: $(date)"
 
 # ─── SYSTEM UPDATE ─────────────────────────────────────────────────────────────
 apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-apt-get install -y curl unzip jq fail2ban ufw bc mysql-client-core-8.0
+apt-get install -y curl unzip jq fail2ban ufw bc
+
+# ─── MYSQL (local, for POC — switch to RDS for production) ────────────────────
+apt-get install -y mysql-server
+systemctl enable mysql
+systemctl start mysql
+
+# Create WordPress database and user
+mysql -e "CREATE DATABASE IF NOT EXISTS ${db_name};"
+mysql -e "CREATE USER IF NOT EXISTS '${db_user}'@'localhost' IDENTIFIED BY '${db_pass}';"
+mysql -e "GRANT ALL PRIVILEGES ON ${db_name}.* TO '${db_user}'@'localhost';"
+mysql -e "FLUSH PRIVILEGES;"
 
 # ─── FAIL2BAN ──────────────────────────────────────────────────────────────────
 systemctl enable fail2ban
@@ -259,16 +270,7 @@ chown -R www-data:www-data /var/www/wordpress
 find /var/www/wordpress -type d -exec chmod 755 {} \;
 find /var/www/wordpress -type f -exec chmod 644 {} \;
 
-# ─── WAIT FOR RDS ─────────────────────────────────────────────────────────────
-echo "Waiting for RDS to accept connections..."
-for i in $(seq 1 60); do
-  if mysql -h "${db_host}" -u "${db_user}" -p"${db_pass}" -e "SELECT 1" &>/dev/null; then
-    echo "RDS is ready!"
-    break
-  fi
-  echo "Attempt $i/60 - waiting 10s..."
-  sleep 10
-done
+# MySQL is local - no wait needed
 
 # ─── INSTALL WORDPRESS ─────────────────────────────────────────────────────────
 cd /var/www/wordpress
