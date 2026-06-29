@@ -3,7 +3,7 @@ name: "Deploy & Manage WordPress"
 on:
   push:
     branches: [main]
-    paths: [scripts/**]
+    paths: ["scripts/**"]
   workflow_dispatch:
     inputs:
       action:
@@ -24,7 +24,7 @@ env:
 
 jobs:
   deploy:
-    name: Deploy Scripts
+    name: Deploy & Clear Cache
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
 
@@ -32,23 +32,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Get Instance IDs from ASG
-        id: instances
-        run: |
-          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
-            --auto-scaling-group-names "$ASG_NAME" \
-            --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
-            --output text)
-          echo "ids=$INSTANCE_IDS" >> $GITHUB_OUTPUT
-          echo "Instances: $INSTANCE_IDS"
-
       - name: Clear Caches on All Instances
         run: |
           aws ssm send-command \
             --targets "Key=tag:aws:autoscaling:groupName,Values=$ASG_NAME" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo rm -rf /var/cache/nginx/fastcgi/*","redis-cli FLUSHALL","sudo systemctl restart php8.2-fpm","sudo systemctl reload nginx"]' \
-            --comment "Deploy - clear caches"
+            --parameters '{"commands":["sudo rm -rf /var/cache/nginx/fastcgi/*","redis-cli FLUSHALL","sudo systemctl restart php8.2-fpm","sudo systemctl reload nginx"]}' \
+            --comment "Deploy - clear caches" \
+            --region $AWS_REGION
+          echo "✅ Deployed and caches cleared!"
 
   clear-cache:
     name: Clear All Caches
@@ -58,13 +50,13 @@ jobs:
     steps:
       - name: Clear Caches
         run: |
-          COMMAND_ID=$(aws ssm send-command \
+          aws ssm send-command \
             --targets "Key=tag:aws:autoscaling:groupName,Values=$ASG_NAME" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo rm -rf /var/cache/nginx/fastcgi/*","redis-cli FLUSHALL","cd /var/www/wordpress && sudo -u www-data wp transient delete --all","sudo kill -USR2 $(cat /run/php/php8.2-fpm.pid)"]' \
+            --parameters '{"commands":["sudo rm -rf /var/cache/nginx/fastcgi/*","redis-cli FLUSHALL","cd /var/www/wordpress && sudo -u www-data wp transient delete --all","sudo systemctl restart php8.2-fpm"]}' \
             --comment "Manual cache clear" \
-            --query 'Command.CommandId' --output text)
-          echo "✅ Cache clear sent! Command: $COMMAND_ID"
+            --region $AWS_REGION
+          echo "✅ All caches cleared!"
 
   backup:
     name: Database Backup
@@ -72,20 +64,20 @@ jobs:
     if: github.event.inputs.action == 'backup'
 
     steps:
-      - name: Run Backup on One Instance
+      - name: Run Backup
         run: |
-          # Get first healthy instance
           INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-names "$ASG_NAME" \
             --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId | [0]' \
-            --output text)
-
+            --output text --region $AWS_REGION)
+          echo "Running backup on: $INSTANCE_ID"
           aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo /usr/local/bin/wp-backup.sh"]' \
-            --comment "Manual backup trigger"
-          echo "✅ Backup triggered on $INSTANCE_ID"
+            --parameters '{"commands":["sudo /usr/local/bin/wp-backup.sh"]}' \
+            --comment "Manual backup" \
+            --region $AWS_REGION
+          echo "✅ Backup triggered!"
 
   restart-services:
     name: Restart Services
@@ -93,14 +85,15 @@ jobs:
     if: github.event.inputs.action == 'restart-services'
 
     steps:
-      - name: Restart on All Instances
+      - name: Restart
         run: |
           aws ssm send-command \
             --targets "Key=tag:aws:autoscaling:groupName,Values=$ASG_NAME" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo systemctl restart nginx","sudo systemctl restart php8.2-fpm","sudo systemctl restart redis-server"]' \
-            --comment "Restart all services"
-          echo "✅ Services restarted!"
+            --parameters '{"commands":["sudo systemctl restart nginx","sudo systemctl restart php8.2-fpm","sudo systemctl restart redis-server"]}' \
+            --comment "Restart services" \
+            --region $AWS_REGION
+          echo "✅ All services restarted!"
 
   update-wordpress:
     name: Update WordPress
@@ -108,11 +101,12 @@ jobs:
     if: github.event.inputs.action == 'update-wordpress'
 
     steps:
-      - name: Update WP Core + Plugins
+      - name: Update
         run: |
           aws ssm send-command \
             --targets "Key=tag:aws:autoscaling:groupName,Values=$ASG_NAME" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["cd /var/www/wordpress","sudo -u www-data wp core update --minor","sudo -u www-data wp plugin update --all","sudo systemctl restart php8.2-fpm"]' \
-            --comment "WordPress update"
+            --parameters '{"commands":["cd /var/www/wordpress","sudo -u www-data wp core update --minor","sudo -u www-data wp plugin update --all","sudo systemctl restart php8.2-fpm"]}' \
+            --comment "WordPress update" \
+            --region $AWS_REGION
           echo "✅ WordPress updated!"

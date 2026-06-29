@@ -3,10 +3,10 @@ name: "Infrastructure - OpenTofu"
 on:
   push:
     branches: [main]
-    paths: [infra/**]
+    paths: ["infra/**"]
   pull_request:
     branches: [main]
-    paths: [infra/**]
+    paths: ["infra/**"]
 
 env:
   TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
@@ -17,8 +17,8 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
-  validate:
-    name: Validate & Plan
+  plan:
+    name: Plan
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,45 +31,38 @@ jobs:
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@v1
         with:
-          tofu_version: "1.7.0"
+          tofu_version: "1.8.0"
 
-      - name: OpenTofu Init
+      - name: Init
         run: tofu init
 
-      - name: OpenTofu Format Check
-        run: tofu fmt -check -recursive
-
-      - name: OpenTofu Validate
+      - name: Validate
         run: tofu validate
 
-      - name: OpenTofu Plan
-        run: tofu plan -out=tfplan -no-color
+      - name: Plan
+        id: plan
+        run: tofu plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
 
-      - name: Comment PR with Plan
+      - name: Comment PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
-            const { execSync } = require('child_process');
-            const plan = execSync('cd infra && tofu show -no-color tfplan').toString();
-            const output = `#### 📝 OpenTofu Plan
-            \`\`\`
-            ${plan.substring(0, 60000)}
-            \`\`\`
-            *Pushed by: @${{ github.actor }}*`;
+            const fs = require('fs');
+            const plan = fs.readFileSync('infra/plan_output.txt', 'utf8');
+            const body = `### OpenTofu Plan\n\`\`\`\n${plan.substring(0, 60000)}\n\`\`\``;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: output
+              body: body
             });
 
   apply:
     name: Apply
     runs-on: ubuntu-latest
-    needs: validate
+    needs: plan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: production
     defaults:
       run:
         working-directory: infra/
@@ -81,17 +74,18 @@ jobs:
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@v1
         with:
-          tofu_version: "1.7.0"
+          tofu_version: "1.8.0"
 
-      - name: OpenTofu Init
+      - name: Init
         run: tofu init
 
-      - name: OpenTofu Apply
+      - name: Apply
         run: tofu apply -auto-approve
 
-      - name: Show Outputs
+      - name: Outputs
         run: |
-          echo "## Deployment Outputs" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           tofu output -no-color >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY

@@ -2,7 +2,7 @@ name: "Maintenance & Health Check"
 
 on:
   schedule:
-    - cron: "0 6 * * *"   # Daily 6 AM UTC
+    - cron: "0 6 * * *"
   workflow_dispatch:
 
 env:
@@ -22,50 +22,55 @@ jobs:
         run: |
           ALB_DNS=$(aws elbv2 describe-load-balancers \
             --names "wp-prod-alb" \
-            --query 'LoadBalancers[0].DNSName' --output text)
+            --query 'LoadBalancers[0].DNSName' --output text \
+            --region $AWS_REGION)
           echo "dns=$ALB_DNS" >> $GITHUB_OUTPUT
+          echo "ALB: $ALB_DNS"
 
-      - name: Check Website Status
+      - name: Check Site Status
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ steps.alb.outputs.dns }}/health)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://${{ steps.alb.outputs.dns }}/health)
+          echo "Status: $STATUS"
           if [ "$STATUS" != "200" ]; then
-            echo "❌ Site is DOWN! Status: $STATUS"
+            echo "❌ Site DOWN!"
             exit 1
           fi
-          echo "✅ Site is UP (Status: $STATUS)"
+          echo "✅ Site UP"
 
       - name: Check Response Time
         run: |
-          TIME=$(curl -s -o /dev/null -w "%{time_total}" http://${{ steps.alb.outputs.dns }}/)
-          echo "Response time: ${TIME}s"
-          if (( $(echo "$TIME > 5.0" | bc -l) )); then
-            echo "⚠️ Slow response: ${TIME}s"
+          TIME=$(curl -s -o /dev/null -w "%{time_total}" --max-time 10 http://${{ steps.alb.outputs.dns }}/)
+          echo "Response: ${TIME}s"
+          SLOW=$(echo "$TIME > 5.0" | awk '{print ($1 > 5.0)}')
+          if [ "$SLOW" = "1" ]; then
+            echo "⚠️ Slow: ${TIME}s"
             exit 1
           fi
 
-      - name: Check ASG Health
+      - name: Check ASG
         run: |
           HEALTHY=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-names "$ASG_NAME" \
             --query 'AutoScalingGroups[0].Instances[?HealthStatus==`Healthy`] | length(@)' \
-            --output text)
+            --output text --region $AWS_REGION)
           echo "Healthy instances: $HEALTHY"
-          if [ "$HEALTHY" == "0" ]; then
+          if [ "$HEALTHY" = "0" ]; then
             echo "❌ No healthy instances!"
             exit 1
           fi
 
   weekly-updates:
-    name: Weekly Security Updates
+    name: Weekly Updates
     runs-on: ubuntu-latest
     if: github.event.schedule == '0 6 * * 0' || github.event_name == 'workflow_dispatch'
 
     steps:
-      - name: Run System Updates
+      - name: Run Updates
         run: |
           aws ssm send-command \
             --targets "Key=tag:aws:autoscaling:groupName,Values=$ASG_NAME" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo apt-get update","sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --only-upgrade","cd /var/www/wordpress","sudo -u www-data wp core update --minor","sudo -u www-data wp plugin update --all","sudo systemctl restart php8.2-fpm","sudo systemctl reload nginx"]' \
-            --comment "Weekly security updates"
-          echo "✅ Weekly maintenance complete!"
+            --parameters '{"commands":["sudo apt-get update","sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --only-upgrade","cd /var/www/wordpress","sudo -u www-data wp core update --minor","sudo -u www-data wp plugin update --all","sudo systemctl restart php8.2-fpm","sudo systemctl reload nginx"]}' \
+            --comment "Weekly updates" \
+            --region $AWS_REGION
+          echo "✅ Weekly maintenance done!"
