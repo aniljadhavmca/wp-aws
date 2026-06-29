@@ -196,7 +196,7 @@ sudo -u www-data wp db export "/tmp/db-$(date +\%Y\%m\%d).sql" --quiet
 gzip "/tmp/db-$(date +\%Y\%m\%d).sql"
 TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 RG=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
-aws s3 cp "/tmp/db-$(date +\%Y\%m\%d).sql.gz" "s3://${S3_BUCKET/media/backups}/db/" --region "$RG" --quiet 2>/dev/null || true
+aws s3 cp "/tmp/db-$(date +\%Y\%m\%d).sql.gz" "s3://$${S3_BUCKET/media/backups}/db/" --region "$RG" --quiet 2>/dev/null || true
 rm -f /tmp/db-*.sql.gz
 BKSCRIPT
 chmod +x /usr/local/bin/wp-backup.sh
