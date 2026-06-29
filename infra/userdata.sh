@@ -144,7 +144,9 @@ curl -sO https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.ph
 chmod +x wp-cli.phar && mv wp-cli.phar /usr/local/bin/wp
 
 # WordPress
-mkdir -p /var/www/wordpress && cd /var/www/wordpress
+mkdir -p /var/www/wordpress
+chown www-data:www-data /var/www/wordpress
+cd /var/www/wordpress
 sudo -u www-data wp core download --quiet
 sudo -u www-data wp config create --dbhost="$DB_HOST" --dbname="$DB_NAME" --dbuser="$DB_USER" --dbpass="$DB_PASS" --extra-php <<WPCONF
 define('WP_CACHE', true);
