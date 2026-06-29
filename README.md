@@ -6,43 +6,7 @@
 
 ## 🏗️ Architecture
 
-```
-                         ┌──────────────┐
-          HTTPS          │  CloudFront  │────── S3 (Product Images)
-        ──────────────── │  (CDN+SSL)   │       Encrypted, Versioned
-                         └──────┬───────┘
-                                │
-                         ┌──────▼───────┐
-                         │     ALB      │  ← Health Checks (/health)
-                         │  (public)    │  ← Sticky Sessions
-                         │  Port 80/443 │
-                         └──────┬───────┘
-                                │
-              ┌─────────────────▼─────────────────────┐
-              │           PRIVATE SUBNET               │
-              │    (no public IP, no SSH port)          │
-              │                                        │
-              │  ┌──────────── ASG ─────────────────┐  │
-              │  │  Min: 1 │ Max: 3 │ Desired: 1    │  │
-              │  │                                  │  │
-              │  │  ┌──────────┐    ┌──────────┐    │  │
-              │  │  │ EC2 (1)  │    │ EC2 (2)  │    │  │
-              │  │  │ t3.large │    │ (scaled) │    │  │
-              │  │  │          │    │          │    │  │
-              │  │  │ Nginx    │    │ Nginx    │    │  │
-              │  │  │ PHP 8.2  │    │ PHP 8.2  │    │  │
-              │  │  │ MySQL    │    │ MySQL    │    │  │
-              │  │  │ Redis    │    │ Redis    │    │  │
-              │  │  └──────────┘    └──────────┘    │  │
-              │  │                                  │  │
-              │  │  Scale UP:   Memory ≥ 70% (15m)  │  │
-              │  │  Scale DOWN: < 70% stable (6hr)  │  │
-              │  └──────────────────────────────────┘  │
-              └────────────────────────────────────────┘
-
-              Server Access: SSM Session Manager only
-              (No SSH │ No Bastion │ No Public IP)
-```
+![Architecture](images/architecture.png)
 
 > **Production upgrade**: Uncomment `rds.tf` to use managed RDS MySQL instead of local MySQL. Gives you automated backups, Multi-AZ failover, and shared DB across scaled instances.
 
