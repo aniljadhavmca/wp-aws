@@ -37,7 +37,7 @@ output "cloudfront_distribution_id" {
 }
 
 output "tfstate_bucket" {
-  value = aws_s3_bucket.tfstate.bucket
+  value = "wp-prod-tfstate-bucket"
 }
 
 output "sns_topic_arn" {

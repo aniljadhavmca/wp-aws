@@ -2,7 +2,6 @@
 # This project uses OpenTofu (open-source Terraform fork).
 # Install: brew install opentofu
 # Commands: tofu init, tofu plan, tofu apply, tofu destroy
-# Note: OpenTofu uses the same HCL syntax and "terraform {}" block name.
 
 terraform {
   required_providers {
@@ -17,17 +16,13 @@ terraform {
   }
   required_version = ">= 1.6.0"
 
-  # ⚠️ IMPORTANT: Uncomment AFTER first successful `tofu apply`
-  # Then run `tofu init` to migrate state to S3
-  # Replace bucket name with actual value from: tofu output tfstate_bucket
-  #
-  # backend "s3" {
-  #   bucket         = "wp-prod-tfstate-REPLACE_ME"
-  #   key            = "infra/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   dynamodb_table = "wp-prod-tflock"
-  #   encrypt        = true
-  # }
+  backend "s3" {
+    bucket         = "wp-prod-tfstate-bucket"
+    key            = "infra/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "wp-prod-tflock"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
