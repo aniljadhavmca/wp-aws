@@ -1,0 +1,16 @@
+aws_region           = "us-east-1"
+project_name         = "wp-prod"
+ec2_instance_type    = "t3.large"
+ec2_volume_size      = 100
+db_instance_class    = "db.t3.medium"
+db_allocated_storage = 100
+db_name              = "wordpress"
+db_username          = "wpadmin"
+db_password          = "CHANGE_ME_STRONG_DB_PASSWORD"
+domain_name          = ""
+
+# WordPress Admin (login credentials)
+wp_admin_user     = "admin"
+wp_admin_password = "CHANGE_ME_STRONG_ADMIN_PASSWORD"
+wp_admin_email    = "your-email@example.com"
+wp_site_title     = "My WordPress Store"

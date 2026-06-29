@@ -1,0 +1,71 @@
+name: "Maintenance & Health Check"
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # Daily 6 AM UTC
+  workflow_dispatch:
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_REGION: us-east-1
+  ASG_NAME: wp-prod-asg
+
+jobs:
+  health-check:
+    name: Health Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get ALB DNS
+        id: alb
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "wp-prod-alb" \
+            --query 'LoadBalancers[0].DNSName' --output text)
+          echo "dns=$ALB_DNS" >> $GITHUB_OUTPUT
+
+      - name: Check Website Status
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ steps.alb.outputs.dns }}/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ Site is DOWN! Status: $STATUS"
+            exit 1
+          fi
+          echo "✅ Site is UP (Status: $STATUS)"
+
+      - name: Check Response Time
+        run: |
+          TIME=$(curl -s -o /dev/null -w "%{time_total}" http://${{ steps.alb.outputs.dns }}/)
+          echo "Response time: ${TIME}s"
+          if (( $(echo "$TIME > 5.0" | bc -l) )); then
+            echo "⚠️ Slow response: ${TIME}s"
+            exit 1
+          fi
+
+      - name: Check ASG Health
+        run: |
+          HEALTHY=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$ASG_NAME" \
+            --query 'AutoScalingGroups[0].Instances[?HealthStatus==`Healthy`] | length(@)' \
+            --output text)
+          echo "Healthy instances: $HEALTHY"
+          if [ "$HEALTHY" == "0" ]; then
+            echo "❌ No healthy instances!"
+            exit 1
+          fi
+
+  weekly-updates:
+    name: Weekly Security Updates
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 6 * * 0' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Run System Updates
+        run: |
+          aws ssm send-command \
+            --targets "Key=tag:aws:autoscaling:groupName,Values=$ASG_NAME" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["sudo apt-get update","sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --only-upgrade","cd /var/www/wordpress","sudo -u www-data wp core update --minor","sudo -u www-data wp plugin update --all","sudo systemctl restart php8.2-fpm","sudo systemctl reload nginx"]' \
+            --comment "Weekly security updates"
+          echo "✅ Weekly maintenance complete!"
