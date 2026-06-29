@@ -317,15 +317,22 @@ cat > /usr/local/bin/wp-backup.sh <<'BACKUP'
 set -euo pipefail
 TIMESTAMP=$(date +%Y%m%d_%H%M)
 BACKUP_DIR="/tmp/wp-backup-$TIMESTAMP"
-REGION=$(TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600") && curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
-BUCKET=$(grep -oP "(?<='bucket' => ')[^']*" /var/www/wordpress/wp-config.php | head -1)
+TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
 
 mkdir -p "$BACKUP_DIR"
 cd /var/www/wordpress
 sudo -u www-data wp db export "$BACKUP_DIR/database.sql" --quiet
 
 tar -czf "$BACKUP_DIR/backup.tar.gz" -C "$BACKUP_DIR" database.sql
-aws s3 cp "$BACKUP_DIR/backup.tar.gz" "s3://${BUCKET/media/backups}/db/$TIMESTAMP.tar.gz" --region "$REGION" --quiet
+
+# Get backup bucket name (media bucket name with 'media' replaced by 'backups')
+MEDIA_BUCKET=$(sudo -u www-data wp eval "echo AS3CF_SETTINGS ? unserialize(AS3CF_SETTINGS)['bucket'] : '';" 2>/dev/null || echo "")
+BACKUP_BUCKET="$${MEDIA_BUCKET/media/backups}"
+
+if [ -n "$BACKUP_BUCKET" ]; then
+  aws s3 cp "$BACKUP_DIR/backup.tar.gz" "s3://$BACKUP_BUCKET/db/$TIMESTAMP.tar.gz" --region "$REGION" --quiet
+fi
 
 rm -rf "$BACKUP_DIR"
 echo "Backup complete: $TIMESTAMP"
