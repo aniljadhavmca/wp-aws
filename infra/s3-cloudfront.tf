@@ -17,6 +17,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "media" {
     id     = "transition-old-versions"
     status = "Enabled"
 
+    filter {}
+
     noncurrent_version_transition {
       noncurrent_days = 30
       storage_class   = "STANDARD_IA"
@@ -58,6 +60,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "backups" {
   rule {
     id     = "expire-old-backups"
     status = "Enabled"
+
+    filter {}
 
     transition {
       days          = 30
