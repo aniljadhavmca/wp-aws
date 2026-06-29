@@ -15,8 +15,8 @@ output "wordpress_admin_user" {
   value = var.wp_admin_user
 }
 
-output "ec2_instance_id" {
-  value = aws_instance.wordpress.id
+output "asg_name" {
+  value = aws_autoscaling_group.wordpress.name
 }
 
 output "s3_media_bucket" {
@@ -28,7 +28,8 @@ output "cloudfront_domain" {
 }
 
 output "ssm_connect_command" {
-  value = "aws ssm start-session --target ${aws_instance.wordpress.id} --region ${var.aws_region}"
+  value       = "aws ssm start-session --target <instance-id> --region ${var.aws_region}"
+  description = "Find instance ID: aws ec2 describe-instances --filters Name=tag:Name,Values=wp-prod-wordpress-asg --query Reservations[].Instances[].InstanceId --output text"
 }
 
 output "tfstate_bucket" {

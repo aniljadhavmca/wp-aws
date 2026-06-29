@@ -39,21 +39,3 @@ resource "aws_cloudwatch_metric_alarm" "alb_unhealthy" {
     TargetGroup  = aws_lb_target_group.wordpress.arn_suffix
   }
 }
-
-# ─── EC2 CPU ALARM ─────────────────────────────────────────────────────────────
-
-resource "aws_cloudwatch_metric_alarm" "ec2_cpu" {
-  alarm_name          = "${var.project_name}-ec2-cpu"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/EC2"
-  period              = 300
-  statistic           = "Average"
-  threshold           = 80
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-
-  dimensions = {
-    InstanceId = aws_instance.wordpress.id
-  }
-}
