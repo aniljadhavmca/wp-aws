@@ -52,7 +52,7 @@ resource "aws_launch_template" "wordpress" {
   tags = { Name = "${var.project_name}-lt" }
 
   lifecycle {
-    ignore_changes = [user_data]
+    create_before_destroy = true
   }
 }
 
